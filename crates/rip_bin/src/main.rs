@@ -118,6 +118,7 @@ async fn actual_main() -> miette::Result<()> {
     // Construct a package database
     let client = ClientWithMiddleware::from(Client::new());
     let package_db = rattler_installs_packages::index::PackageDb::new(
+        None,
         client,
         &[normalize_index_url(args.index_url.clone())],
         &cache_dir,

@@ -117,8 +117,11 @@ impl Display for PypiPackageName {
 
 /// This is a [`DependencyProvider`] for PyPI packages
 pub(crate) struct PypiDependencyProvider<'db, 'i> {
+    // The pool is shared across different pypi indices because it's
+    // a concept from resolvo -- it's not aware of where the packages are pulled from
     pub pool: Pool<PypiVersionSet, PypiPackageName>,
-    package_db: &'db PackageDb,
+    package_dbs: Vec<&'db PackageDb>,
+
     wheel_builder: WheelBuilder<'db, 'i>,
     markers: &'i MarkerEnvironment,
     compatible_tags: Option<&'i WheelTags>,
@@ -128,6 +131,9 @@ pub(crate) struct PypiDependencyProvider<'db, 'i> {
     favored_packages: HashMap<NormalizedPackageName, PinnedPackage<'db>>,
     locked_packages: HashMap<NormalizedPackageName, PinnedPackage<'db>>,
 
+    // Certain packages must be resolved through specific pip indices
+    indices_map: HashMap<NormalizedPackageName, usize>,
+
     options: &'i ResolveOptions,
 }
 
@@ -135,7 +141,7 @@ impl<'db, 'i> PypiDependencyProvider<'db, 'i> {
     /// Creates a new PypiDependencyProvider
     /// for use with the [`resolvo`] crate
     pub fn new(
-        package_db: &'db PackageDb,
+        package_dbs: &[&'db PackageDb],
         markers: &'i MarkerEnvironment,
         compatible_tags: Option<&'i WheelTags>,
         locked_packages: HashMap<NormalizedPackageName, PinnedPackage<'db>>,
@@ -147,15 +153,46 @@ impl<'db, 'i> PypiDependencyProvider<'db, 'i> {
             WheelBuilder::new(package_db, markers, compatible_tags, options, env_variables)
                 .into_diagnostic()?;
 
+        let db_indices_map = package_dbs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, db)| db.index_id().clone().map(|index_id| (index_id, i)))
+            .collect::<HashMap<_, _>>();
+
+        let indices_map = locked_packages
+            .iter()
+            .chain(favored_packages.iter())
+            .try_fold(
+                HashMap::new(),
+                |mut map, (name, package)| -> miette::Result<_> {
+                    if let Some(index) = &package.index_id {
+                        if let Some(db_index) = db_indices_map.get(index) {
+                            map.insert(name.clone(), *db_index);
+                        } else {
+                            miette::bail!(
+                                "referenced index '{}' for the package '{}' could not be found",
+                                index,
+                                name
+                            );
+                        }
+                    }
+
+                    Ok(map)
+                },
+            )?;
+
+        let package_dbs = package_dbs.to_vec();
+
         Ok(Self {
             pool: Pool::new(),
-            package_db,
+            package_dbs,
             wheel_builder,
             markers,
             compatible_tags,
             cached_artifacts: Default::default(),
             favored_packages,
             locked_packages,
+            indices_map,
             options,
         })
     }

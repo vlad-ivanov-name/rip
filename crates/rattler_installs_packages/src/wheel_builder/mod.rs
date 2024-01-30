@@ -373,6 +373,7 @@ mod tests {
 
         (
             PackageDb::new(
+                None,
                 client,
                 &[url::Url::parse("https://pypi.org/simple/").unwrap()],
                 tempdir.path(),

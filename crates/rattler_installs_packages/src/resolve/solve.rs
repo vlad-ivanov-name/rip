@@ -23,6 +23,9 @@ pub struct PinnedPackage<'db> {
     /// The extras that where selected either by the user or as part of the resolution.
     pub extras: HashSet<Extra>,
 
+    /// Opaque ID of the index this package should be resolved from. `None` means default index
+    pub index_id: Option<String>,
+
     /// The applicable artifacts for this package. These have been ordered by compatibility if
     /// `compatible_tags` have been provided to the solver.
     ///
@@ -263,6 +266,7 @@ pub async fn resolve<'db>(
                 name: name.base().clone(),
                 version: version.clone(),
                 extras: Default::default(),
+                index_id: package_db.index_id(),
                 artifacts: provider
                     .cached_artifacts
                     .get(&solvable_id)

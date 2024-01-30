@@ -23,6 +23,9 @@ use url::Url;
 
 /// Cache of the available packages, artifacts and their metadata.
 pub struct PackageDb {
+    /// Opaque ID of this particular set of indices
+    id: Option<String>,
+
     http: Http,
 
     /// Index URLS to query
@@ -44,11 +47,13 @@ pub struct PackageDb {
 impl PackageDb {
     /// Constructs a new [`PackageDb`] that reads information from the specified URLs.
     pub fn new(
+        id: Option<&str>,
         client: ClientWithMiddleware,
         index_urls: &[Url],
         cache_dir: &Path,
     ) -> std::io::Result<Self> {
         Ok(Self {
+            id: id.map(|s| s.to_owned()),
             http: Http::new(client, FileStore::new(&cache_dir.join("http"))?),
             index_urls: index_urls.into(),
             metadata_cache: FileStore::new(&cache_dir.join("metadata"))?,
@@ -66,6 +71,11 @@ impl PackageDb {
     /// Returns the local wheel cache
     pub fn local_wheel_cache(&self) -> &WheelCache {
         &self.local_wheel_cache
+    }
+
+    /// Returns an opaque index id passed during instantiation
+    pub fn index_id(&self) -> Option<String> {
+        self.id.clone()
     }
 
     /// Downloads and caches information about available artifiacts of a package from the index.
@@ -530,6 +540,7 @@ mod test {
     async fn test_available_packages() {
         let cache_dir = TempDir::new().unwrap();
         let package_db = PackageDb::new(
+            None,
             ClientWithMiddleware::from(Client::new()),
             &[Url::parse("https://pypi.org/simple/").unwrap()],
             cache_dir.path(),
@@ -559,6 +570,7 @@ mod test {
     async fn test_pep658() {
         let cache_dir = TempDir::new().unwrap();
         let package_db = PackageDb::new(
+            None,
             ClientWithMiddleware::from(Client::new()),
             &[Url::parse("https://pypi.org/simple/").unwrap()],
             cache_dir.path(),
